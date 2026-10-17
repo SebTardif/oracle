@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Browser: treat only `auth.openai.com` and its subdomains as the manual-login page, so a lookalike host does not extend a failed prompt wait; thanks @SebTardif.
 - Browser: add opt-in `--browser-no-focus` / `browser.noFocus` for background ChatGPT runs, attachment submission, and recovery; preserve foreground defaults, retain shared browser transports, and bring Chrome forward when sign-in or a challenge requires input; thanks @postoso and @Eotel.
 
 - Browser: attach and harvest only HTTPS tabs on the exact ChatGPT hosts, rejecting lookalike hosts and unrelated pages titled ChatGPT; thanks @SebTardif.

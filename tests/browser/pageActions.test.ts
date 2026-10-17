@@ -285,6 +285,80 @@ describe("ensurePromptReady", () => {
     await expect(ensurePromptReady(runtime, 5_000, logger)).resolves.toBeUndefined();
     expect(runtime.evaluate).toHaveBeenCalledTimes(3);
   });
+
+  const manualLoginLog = "Auth login page detected; waiting for manual login to complete...";
+
+  const locationRuntime = (href: string) => {
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+      if (expression.includes("location.href")) {
+        return { result: { value: href } };
+      }
+      return { result: { value: false } };
+    });
+    return { evaluate } as unknown as ChromeClient["Runtime"];
+  };
+
+  const finishPromptWait = async (href: string) => {
+    vi.useFakeTimers();
+    try {
+      const pending = ensurePromptReady(locationRuntime(href), 0, logger);
+      const result = pending.then(
+        () => "resolved" as const,
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(60_000);
+      return await result;
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+
+  test.each([
+    "https://notauth.openai.com/",
+    "https://auth.openai.com.evil.test/",
+    "https://foo.auth.openai.com.evil.test/",
+    "https://evilauth.openai.com/session",
+    "https://auth.openai.com@notauth.openai.com/authorize",
+    "https://notauth.openai.com:8443/authorize",
+  ])("does not extend the prompt wait for lookalike auth host %s", async (href) => {
+    const outcome = await finishPromptWait(href);
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toMatch(/textarea did not appear/i);
+    expect(logger).not.toHaveBeenCalledWith(manualLoginLog);
+  });
+
+  test.each([
+    "https://auth.openai.com/login",
+    "https://login.auth.openai.com/u/login/identifier",
+    "https://Auth.OpenAI.com./login",
+    "https://chatgpt.com/log-in",
+    "https://notauth.openai.com@auth.openai.com/login",
+  ])("still waits for manual login on %s", async (href) => {
+    vi.useFakeTimers();
+    try {
+      const pending = ensurePromptReady(locationRuntime(href), 0, logger);
+      let settled = false;
+      const result = pending.then(
+        () => {
+          settled = true;
+          return "resolved" as const;
+        },
+        (error: unknown) => {
+          settled = true;
+          return error;
+        },
+      );
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(logger).toHaveBeenCalledWith(manualLoginLog);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(59_000);
+      const outcome = await result;
+      expect(outcome).toBeInstanceOf(Error);
+      expect((outcome as Error).message).toMatch(/textarea did not appear/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("ensureChatMode", () => {
